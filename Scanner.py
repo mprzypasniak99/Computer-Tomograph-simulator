@@ -2,10 +2,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import skimage.io as io
 import skimage.draw as draw
+import skimage.exposure as exposure
+
 
 class Scanner:
 
-    def __init__(self, nDet: int, phi: float, r: float, noViews: int):
+    def __init__(self, nDet=None, phi=None, r=None, noViews=None):
         self.__no_detectors = nDet
         self.__phi = phi
         self.__radius = r
@@ -17,7 +19,8 @@ class Scanner:
 
     def load_image(self, img: np.ndarray):
         self.__img = img
-        self.__restored_img = np.zeros(img.shape)
+        self.__restored_img = np.zeros(img.shape, dtype=float)
+        self.__radius = max(img.shape[0], img.shape[1]) / 2
 
     def set_no_detectors(self, nDet: int):
         self.__no_detectors = nDet
@@ -77,17 +80,28 @@ class Scanner:
 
     def __norm_img(self):
         flat = self.__restored_img.flatten()
-        perc = np.percentile(flat, [3, 98])
-        np.clip(self.__restored_img, perc[0], perc[1], self.__restored_img)
-        flat = self.__restored_img.flatten()
-        self.__restored_img /= max(flat)
+        perc = np.percentile(flat, [5, 98])
+        self.__restored_img = exposure.rescale_intensity(self.__restored_img, in_range=(perc[0], perc[1]),
+                                                         out_range=(0.0, 1.0))
 
-        np.clip(self.__restored_img, 0, max(flat), self.__restored_img)
+    def __radon_line(self, line): # to be used in a thread to speed things up
+        cumBrightness = 0.0
+        noElements = 0
 
+        for k in range(len(line[0])):
+            if 0 < line[0][k] < self.__img.shape[0] and 0 < line[1][k] < self.__img.shape[1]:
+                cumBrightness += self.__img[line[0][k], line[1][k]]
+                noElements += 1
+
+        if noElements > 0:
+            return cumBrightness / noElements
+        else:
+            return 0.0
 
     def genSpect(self, no_views: int):
         self.__spect = []
         spect = []
+        self.__restored_img = np.zeros(self.__restored_img.shape)
 
         for i in range(no_views):
             ed = self.__emit_det(i * 2 * np.pi / self.__no_views)
@@ -109,7 +123,10 @@ class Scanner:
                         cumBrightness += self.__img[line[0][k], line[1][k]]
                         noElements += 1
 
-                view.append(cumBrightness / noElements)
+                if noElements > 0:
+                    view.append(cumBrightness / noElements)
+                else:
+                    view.append(0.0)
 
             view = np.convolve(view, self.__filter, mode='same')
             self.__reconstruct_view(lines, view)
@@ -121,11 +138,11 @@ class Scanner:
 
 if __name__ == '__main__':
 
-    image = io.imread("Kropka.jpg", as_gray=True)
-    s = Scanner(90, np.pi, max(image.shape[0]/2, image.shape[1]/2), 90)
+    image = io.imread("SADDLE_PE.JPG", as_gray=True)
+    s = Scanner(180, 3 * np.pi / 2, max(image.shape[0]/2, image.shape[1]/2), 180)
     s.load_image(image)
     s.gen_filter(21)
-    s.genSpect(90)
+    s.genSpect(180)
 
     io.imshow(s.get_spect())
     plt.show()
