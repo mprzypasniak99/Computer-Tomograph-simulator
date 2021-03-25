@@ -4,6 +4,10 @@ import skimage.io as io
 import skimage.draw as draw
 import skimage.exposure as exposure
 
+import pydicom
+import datetime
+from pydicom.dataset import Dataset, FileDataset, FileMetaDataset
+
 
 class Scanner:
 
@@ -135,6 +139,45 @@ class Scanner:
         self.__spect = np.array(spect)
         self.__norm_img()
 
+    def save_to_dicom(self, filename: str, patient_name: str, patient_sex: str, patient_age: str,
+                      patient_id: str, scan_date: datetime.datetime, image_comments: str):
+        if filename[-4:] != ".dcm":
+            filename += ".dcm"
+
+        # meta data for DICOM file
+        meta = FileMetaDataset()
+
+        meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+        meta.MediaStorageSOPInstanceUID = "1.2.3"
+        meta.ImplementationClassUID = "1.2.3.4"
+
+        ds = FileDataset(filename, {}, file_meta=meta, preamble=b'\0' * 128)
+
+        # basic patient data
+        ds.PatientName = patient_name
+        ds.PatientAge = patient_age
+        ds.PatientSex = patient_sex
+        ds.PatientID = patient_id
+
+        # more meta - required to save properly
+        ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+        ds.is_little_endian = True
+        ds.is_implicit_VR = True
+
+        # date and time of diagnosis
+        ds.ContentDate = scan_date.strftime('%Y%m%d')
+        ds.ContentTime = scan_date.strftime('%H%M%S')
+
+        ds.ImageComments = image_comments
+
+        # save image to DICOM
+        ds.PixelData = self.__restored_img.tobytes()
+        ds.Rows = self.__restored_img.shape[1]
+        ds.Columns = self.__restored_img.shape[0]
+        ds.BitsAllocated = self.__restored_img.shape[0]
+
+        ds.save_as(filename, write_like_original=False)
+
 
 if __name__ == '__main__':
 
@@ -149,3 +192,5 @@ if __name__ == '__main__':
 
     io.imshow(s.get_restored_img())
     plt.show()
+
+    s.save_to_dicom("nowy.dcm", "PRZYPASNIAK^Michal", "male", "22", "2137", datetime.datetime.now(), "Good Job Team")
