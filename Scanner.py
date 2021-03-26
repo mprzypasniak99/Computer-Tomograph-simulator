@@ -162,7 +162,7 @@ class Scanner:
         # more meta - required to save properly
         ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
         ds.is_little_endian = True
-        ds.is_implicit_VR = True
+        ds.is_implicit_VR = False
 
         # date and time of diagnosis
         ds.ContentDate = scan_date.strftime('%Y%m%d')
@@ -171,10 +171,20 @@ class Scanner:
         ds.ImageComments = image_comments
 
         # save image to DICOM
-        ds.PixelData = self.__restored_img.tobytes()
-        ds.Rows = self.__restored_img.shape[1]
-        ds.Columns = self.__restored_img.shape[0]
-        ds.BitsAllocated = self.__restored_img.shape[0]
+        ds.PhotometricInterpretation = 'MONOCHROME2'
+        ds.Rows = self.__restored_img.shape[0]
+        ds.Columns = self.__restored_img.shape[1]
+        ds.ImageType = ['ORIGINAL', 'PRIMARY', 'AXIAL']
+        ds.SamplesPerPixel = 1
+        ds.HighBit = 7
+        ds.PixelRepresentation = 0
+        ds.Modality = 'CT'
+        ds.BitsAllocated = 8
+        ds.BitsStored = 8
+        ds.ImagesInAcquisition = 1
+        tmp = np.interp(self.__restored_img, [0, 1], [0, 255])
+        tmp = tmp.astype('ubyte')
+        ds.PixelData = tmp.tobytes()
 
         ds.save_as(filename, write_like_original=False)
 
