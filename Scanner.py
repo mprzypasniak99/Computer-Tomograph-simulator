@@ -20,6 +20,7 @@ class Scanner:
         self.__spect = np.array([])
         self.__restored_img = np.array([])
         self.__filter = np.array([])
+        self.__mse = []
 
     def load_image(self, img: np.ndarray):
         self.__img = img
@@ -55,6 +56,9 @@ class Scanner:
     def get_restored_img(self):
         return self.__restored_img
 
+    def view_mse(self):
+        plt.plot(range(len(self.__mse)), self.__mse)
+
     def __emit_det(self, alpha: float) -> tuple:
         det = []
 
@@ -88,7 +92,7 @@ class Scanner:
         self.__restored_img = exposure.rescale_intensity(self.__restored_img, in_range=(perc[0], perc[1]),
                                                          out_range=(0.0, 1.0))
 
-    def __radon_line(self, line): # to be used in a thread to speed things up
+    def __radon_line(self, line):  # to be used in a thread to speed things up
         cumBrightness = 0.0
         noElements = 0
 
@@ -102,10 +106,16 @@ class Scanner:
         else:
             return 0.0
 
+    def __compute_mse(self):  # compute current mean square error
+        squares_sum = np.sqrt(np.mean((self.__img - self.__restored_img)**2))
+
+        self.__mse.append(squares_sum)
+
     def genSpect(self, no_views: int):
         self.__spect = []
         spect = []
         self.__restored_img = np.zeros(self.__restored_img.shape)
+        self.__mse = []
 
         for i in range(no_views):
             ed = self.__emit_det(i * 2 * np.pi / self.__no_views)
@@ -134,6 +144,7 @@ class Scanner:
 
             view = np.convolve(view, self.__filter, mode='same')
             self.__reconstruct_view(lines, view)
+            self.__compute_mse()
             spect.append(view)
 
         self.__spect = np.array(spect)
@@ -191,7 +202,7 @@ class Scanner:
 
 if __name__ == '__main__':
 
-    image = io.imread("SADDLE_PE.JPG", as_gray=True)
+    image = io.imread("Kropka.jpg", as_gray=True)
     s = Scanner(180, 3 * np.pi / 2, max(image.shape[0]/2, image.shape[1]/2), 180)
     s.load_image(image)
     s.gen_filter(21)
