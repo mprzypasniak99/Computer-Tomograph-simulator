@@ -55,7 +55,10 @@ class Scanner:
 
     def get_restored_img(self):
         return self.__restored_img
-
+        
+    def get_mse(self):
+    	return self.__mse
+    	
     def view_mse(self):
         plt.plot(range(len(self.__mse)), self.__mse)
 
