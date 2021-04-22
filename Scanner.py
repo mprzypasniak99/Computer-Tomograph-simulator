@@ -24,7 +24,7 @@ class Scanner:
         self.__step_images = []
 
     def load_image(self, img: np.ndarray):
-        self.__img = img
+        self.__img = exposure.rescale_intensity(img, out_range=(0.0, 1.0))
         self.__restored_img = np.zeros(img.shape, dtype=float)
         self.__radius = max(img.shape[0], img.shape[1]) / 2
 
