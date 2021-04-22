@@ -11,24 +11,25 @@ from pydicom.dataset import Dataset, FileDataset, FileMetaDataset
 
 class Scanner:
 
-    def __init__(self, nDet=None, phi=None, r=None, noViews=None):
-        self.__no_detectors = nDet
+    def __init__(self, n_det=None, phi=None, r=None, no_views=None):
+        self.__no_detectors = n_det
         self.__phi = phi
         self.__radius = r
-        self.__no_views = noViews
+        self.__no_views = no_views
         self.__img = np.array([])
         self.__spect = np.array([])
         self.__restored_img = np.array([])
         self.__filter = np.array([])
         self.__mse = []
+        self.__step_images = []
 
     def load_image(self, img: np.ndarray):
         self.__img = img
         self.__restored_img = np.zeros(img.shape, dtype=float)
         self.__radius = max(img.shape[0], img.shape[1]) / 2
 
-    def set_no_detectors(self, nDet: int):
-        self.__no_detectors = nDet
+    def set_no_detectors(self, n_det: int):
+        self.__no_detectors = n_det
 
     def set_phi(self, phi: float):
         self.__phi = phi
@@ -55,6 +56,12 @@ class Scanner:
 
     def get_restored_img(self):
         return self.__restored_img
+
+    def get_step_img(self, index: int):
+        return self.__step_images[index]
+
+    def get_no_steps(self):
+        return len(self.__step_images)
 
     def view_mse(self):
         plt.plot(range(len(self.__mse)), self.__mse)
@@ -86,38 +93,41 @@ class Scanner:
             if 0 < line[0][i] < self.__img.shape[0] and 0 < line[1][i] < self.__img.shape[1]:
                 self.__restored_img[line[0][i], line[1][i]] += sin_val
 
-    def __norm_img(self):
-        flat = self.__restored_img.flatten()
+    def __norm_img(self, img: np.ndarray):
+        flat = img.flatten()
         perc = np.percentile(flat, [5, 98])
-        self.__restored_img = exposure.rescale_intensity(self.__restored_img, in_range=(perc[0], perc[1]),
-                                                         out_range=(0.0, 1.0))
+        new_img = exposure.rescale_intensity(img, in_range=(perc[0], perc[1]), out_range=(0.0, 1.0))
+
+        return new_img
 
     def __radon_line(self, line):  # to be used in a thread to speed things up
-        cumBrightness = 0.0
+        cum_brightness = 0.0
         noElements = 0
 
         for k in range(len(line[0])):
             if 0 < line[0][k] < self.__img.shape[0] and 0 < line[1][k] < self.__img.shape[1]:
-                cumBrightness += self.__img[line[0][k], line[1][k]]
+                cum_brightness += self.__img[line[0][k], line[1][k]]
                 noElements += 1
 
         if noElements > 0:
-            return cumBrightness / noElements
+            return cum_brightness / noElements
         else:
             return 0.0
 
     def __compute_mse(self):  # compute current mean square error
-        squares_sum = np.sqrt(np.mean((self.__img - self.__restored_img)**2))
+        img = self.__norm_img(self.__restored_img)
+        squares_sum = np.sqrt(np.mean((self.__img - img)**2))
 
         self.__mse.append(squares_sum)
 
-    def genSpect(self, no_views: int):
+    def gen_spect(self):
         self.__spect = []
         spect = []
         self.__restored_img = np.zeros(self.__restored_img.shape)
         self.__mse = []
+        self.__step_images = []
 
-        for i in range(no_views):
+        for i in range(self.__no_views):
             ed = self.__emit_det(i * 2 * np.pi / self.__no_views)
 
             emit = ed[0]
@@ -129,16 +139,16 @@ class Scanner:
                 line = draw.line_nd(emit, j)
                 lines.append(line)
 
-                cumBrightness = 0.0
-                noElements = 0
+                cum_brightness = 0.0
+                no_elements = 0
 
                 for k in range(len(line[0])):
                     if 0 < line[0][k] < self.__img.shape[0] and 0 < line[1][k] < self.__img.shape[1]:
-                        cumBrightness += self.__img[line[0][k], line[1][k]]
-                        noElements += 1
+                        cum_brightness += self.__img[line[0][k], line[1][k]]
+                        no_elements += 1
 
-                if noElements > 0:
-                    view.append(cumBrightness / noElements)
+                if no_elements > 0:
+                    view.append(cum_brightness / no_elements)
                 else:
                     view.append(0.0)
 
@@ -147,8 +157,11 @@ class Scanner:
             self.__compute_mse()
             spect.append(view)
 
+            if i % 10 == 0:
+                self.__step_images.append(self.__norm_img(self.__restored_img))
+
         self.__spect = np.array(spect)
-        self.__norm_img()
+        self.__restored_img = self.__norm_img(self.__restored_img)
 
     def save_to_dicom(self, filename: str, patient_name: str, patient_sex: str, patient_age: str,
                       patient_id: str, scan_date: datetime.datetime, image_comments: str):
@@ -202,16 +215,19 @@ class Scanner:
 
 if __name__ == '__main__':
 
-    image = io.imread("Kropka.jpg", as_gray=True)
+    image = io.imread("SADDLE_PE.JPG", as_gray=True)
     s = Scanner(180, 3 * np.pi / 2, max(image.shape[0]/2, image.shape[1]/2), 180)
     s.load_image(image)
     s.gen_filter(21)
-    s.genSpect(180)
+    s.gen_spect()
 
     io.imshow(s.get_spect())
     plt.show()
 
     io.imshow(s.get_restored_img())
+    plt.show()
+
+    s.view_mse()
     plt.show()
 
     s.save_to_dicom("nowy.dcm", "PRZYPASNIAK^Michal", "male", "22", "2137", datetime.datetime.now(), "Good Job Team")
